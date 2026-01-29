@@ -121,3 +121,11 @@ This implementation follows the canonical Faster R-CNN design:
 5. Detection Head: Classification and bounding box regression
 
 All components are implemented explicitly and wired together manually, exposing intermediate tensors, losses, and training dynamics.
+
+
+<p align="center">
+    <img width="500" height="600" alt="Strach_R-CNN" src="https://github.com/user-attachments/assets/88cfbf47-0095-4cdd-b4b7-0605b34c696d" />
+</p>
+
+
+
