@@ -380,5 +380,7 @@ The following visualization shows predicted bounding boxes closely matching the 
     <img width="800" height="1000" alt="Custom_r-cnn_results" src="https://github.com/user-attachments/assets/cbf6b2fa-4114-4d34-bdf0-1b1e4fc64f99" />
 </p>
 
+## Conclusion
 
+This project focuses on implementing Faster R-CNN from scratch as a learning exercise rather than as a production-optimized detector. While the final model does not aim to outperform highly optimized library implementations, the process provides deep insight into how Faster R-CNN actually works internally. By manually building the backbone integration, feature pyramid network, region proposal mechanism, RoI processing, and evaluation pipeline, this project helps bridge the gap between using a one-line API and truly understanding the end-to-end mechanics of two-stage object detectors. As such, it serves as a strong educational reference for understanding real Faster R-CNN behavior beyond high-level abstractions.
 
