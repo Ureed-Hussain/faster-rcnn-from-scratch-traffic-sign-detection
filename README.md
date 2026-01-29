@@ -127,5 +127,221 @@ All components are implemented explicitly and wired together manually, exposing 
     <img width="500" height="600" alt="Strach_R-CNN" src="https://github.com/user-attachments/assets/88cfbf47-0095-4cdd-b4b7-0605b34c696d" />
 </p>
 
+### 1. Backbone Network
+
+The backbone is a custom wrapper around ResNet50, initialized with ImageNet-pretrained weights. Instead of producing a single feature map, the backbone explicitly exposes intermediate feature maps from stages C2–C5, corresponding to strides 4, 8, 16, and 32. These multi-scale feature maps serve as the foundation for pyramid construction in the subsequent neck module and allow explicit control over feature resolution and channel dimensions.
+
+~~~python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.models
+from torchvision.ops import boxes as box_ops
+
+# SECTION 1: BACKBONE (ResNet50 Wrapper)
+
+class ResNetBackbone(nn.Module):
+    """
+    Wrap ResNet50 to output multi-scale feature maps (C2-C5)
+    """
+    def __init__(self, pretrained=True):
+        super().__init__()
+
+        resnet = torchvision.models.resnet50(weights="IMAGENET1K_V2" if pretrained else None)
+
+        self.stem = nn.Sequential(
+            resnet.conv1,
+            resnet.bn1,
+            resnet.relu,
+            resnet.maxpool
+        )
+
+        self.layer1 = resnet.layer1  # C2 (stride 4)
+        self.layer2 = resnet.layer2  # C3 (stride 8)
+        self.layer3 = resnet.layer3  # C4 (stride 16)
+        self.layer4 = resnet.layer4  # C5 (stride 32)
+
+        self.out_channels = {
+            'c2': 256,
+            'c3': 512,
+            'c4': 1024,
+            'c5': 2048
+        }
+
+    def forward(self, x):
+        x = self.stem(x)
+        c2 = self.layer1(x)
+        c3 = self.layer2(c2)
+        c4 = self.layer3(c3)
+        c5 = self.layer4(c4)
+
+        return {
+            'c2': c2,
+            'c3': c3,
+            'c4': c4,
+            'c5': c5
+        }
+
+print(" Section 1: Custom Backbone defined")
+~~~
+
+### 2. Neck (Feature Aggregation)
+The neck is a custom-built Feature Pyramid Network that performs top-down feature propagation with lateral connections. Feature maps from the backbone (C2–C5) are projected into a unified channel space using 1×1 lateral convolutions, merged via nearest-neighbor upsampling, and refined with 3×3 smoothing convolutions. An additional P6 level is generated via strided convolution for improved large-scale proposal coverage. This explicit FPN implementation replaces high-level abstractions and exposes all pyramid construction details.
+
+~~~python
+# SECTION 2: CUSTOM FPN (NECK)
+
+class CustomFPN(nn.Module):
+    """
+    Custom Feature Pyramid Network
+    """
+    def __init__(self, in_channels_list=[256, 512, 1024, 2048], out_channels=256):
+        super().__init__()
+
+        self.out_channels = out_channels
+
+        # Lateral convs
+        self.lateral_c5 = nn.Conv2d(in_channels_list[3], out_channels, 1)
+        self.lateral_c4 = nn.Conv2d(in_channels_list[2], out_channels, 1)
+        self.lateral_c3 = nn.Conv2d(in_channels_list[1], out_channels, 1)
+        self.lateral_c2 = nn.Conv2d(in_channels_list[0], out_channels, 1)
+
+        # Smoothing convs
+        self.smooth_p5 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.smooth_p4 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.smooth_p3 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.smooth_p2 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+
+        # P6 for RPN
+        self.p6_conv = nn.Conv2d(out_channels, out_channels, 3, stride=2, padding=1)
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_uniform_(m.weight, a=1)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward(self, features):
+        c2, c3, c4, c5 = features['c2'], features['c3'], features['c4'], features['c5']
+
+        # Top-down pathway
+        p5 = self.lateral_c5(c5)
+        p4 = self.lateral_c4(c4) + F.interpolate(p5, size=c4.shape[-2:], mode='nearest')
+        p3 = self.lateral_c3(c3) + F.interpolate(p4, size=c3.shape[-2:], mode='nearest')
+        p2 = self.lateral_c2(c2) + F.interpolate(p3, size=c2.shape[-2:], mode='nearest')
+
+        # Smoothing
+        p5 = self.smooth_p5(p5)
+        p4 = self.smooth_p4(p4)
+        p3 = self.smooth_p3(p3)
+        p2 = self.smooth_p2(p2)
+
+        # P6
+        p6 = self.p6_conv(p5)
+
+        return {
+            'p2': p2,
+            'p3': p3,
+            'p4': p4,
+            'p5': p5,
+            'p6': p6
+        }
+
+print(" Section 2: Custom FPN defined")
+~~~
+
+### 3. Region Proposal Network (RPN)
+
+The Region Proposal Network is implemented explicitly using a shared convolutional head followed by parallel objectness and bounding box regression layers. Operating over all FPN levels (P2–P6), the RPN generates anchor-aligned predictions, decodes bounding box deltas, applies clipping, filtering, and non-maximum suppression, and produces a final set of region proposals. Anchor assignment, sampling, IoU-based labeling, and RPN loss computation are all handled manually for full transparency.
+
+~~~python
+# SECTION 3: CUSTOM RPN HEAD
+
+class CustomRPNHead(nn.Module):
+    """
+    Region Proposal Network Head
+    """
+    def __init__(self, in_channels=256, num_anchors=3):
+        super().__init__()
+
+        self.conv = nn.Conv2d(in_channels, in_channels, 3, padding=1)
+        self.objectness = nn.Conv2d(in_channels, num_anchors * 1, 1)
+        self.bbox_pred = nn.Conv2d(in_channels, num_anchors * 4, 1)
+
+        for layer in [self.conv, self.objectness, self.bbox_pred]:
+            nn.init.normal_(layer.weight, std=0.01)
+            nn.init.constant_(layer.bias, 0)
+
+    def forward(self, features):
+        objectness = []
+        bbox_reg = []
+
+        for feature in features:
+            t = F.relu(self.conv(feature))
+            objectness.append(self.objectness(t))
+            bbox_reg.append(self.bbox_pred(t))
+
+        return objectness, bbox_reg
+
+
+
+print(" Section 3: Custom RPN Head defined")
+~~~
+
+### 4. RoI Feature Extraction and Detection Head
+Region-wise features are extracted using MultiScale RoIAlign over FPN levels P2–P5, producing fixed-size feature tensors for each proposal. These features are processed by fully connected layers with dropout, followed by separate classification and bounding box regression heads. Class-specific bounding box refinement, proposal matching, loss computation, and inference-time post-processing (score thresholding and NMS) are implemented explicitly, completing the end-to-end Faster R-CNN detection pipeline.
+
+~~~python
+# SECTION 4: CUSTOM ROI HEADS
+
+class CustomROIHeads(nn.Module):
+    """
+    ROI Heads for final detection
+    """
+    def __init__(self, in_channels=256, num_classes=44, representation_size=1024):
+        super().__init__()
+
+        from torchvision.ops import MultiScaleRoIAlign
+        self.roi_align = MultiScaleRoIAlign(
+            featmap_names=['p2', 'p3', 'p4', 'p5'],
+            output_size=7,
+            sampling_ratio=2
+        )
+
+        self.fc1 = nn.Linear(in_channels * 7 * 7, representation_size)
+        self.fc2 = nn.Linear(representation_size, representation_size)
+        self.dropout1 = nn.Dropout(0.5)
+        self.dropout2 = nn.Dropout(0.5)
+
+        self.cls_score = nn.Linear(representation_size, num_classes)
+        self.bbox_pred = nn.Linear(representation_size, num_classes * 4)
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in [self.fc1, self.fc2, self.cls_score, self.bbox_pred]:
+            nn.init.xavier_uniform_(m.weight)
+            nn.init.constant_(m.bias, 0)
+
+    def forward(self, features, proposals, image_shapes):
+        box_features = self.roi_align(features, proposals, image_shapes)
+        box_features = box_features.flatten(start_dim=1)
+
+        x = F.relu(self.fc1(box_features))
+        x = self.dropout1(x)
+        x = F.relu(self.fc2(x))
+        x = self.dropout2(x)
+
+        class_logits = self.cls_score(x)
+        box_regression = self.bbox_pred(x)
+
+        return class_logits, box_regression
+
+
+print(" Section 4: Custom ROI Heads defined")
+~~~
 
 
