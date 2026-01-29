@@ -79,7 +79,7 @@ I visualize samples from the dataset with bounding boxes and class IDs overlaid 
 Each numeric label corresponds to a traffic sign class defined in the GTSDB label specification.
 
 <p align="center">
-<img width="794" height="498" alt="image" src="https://github.com/user-attachments/assets/7d012d07-54af-4780-8517-7cd8e31cc608" />
+    <img width="600" height="400" alt="image" src="https://github.com/user-attachments/assets/7d012d07-54af-4780-8517-7cd8e31cc608" />
 </p>
 
 ### Data Augmentation
