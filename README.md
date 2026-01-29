@@ -4,8 +4,8 @@ This repository presents a complete from-scratch implementation of Faster R-CNN 
 
 This work represents the final stage of a structured exploration of Faster R-CNN architectures for traffic sign detection:
 
-1. Baseline Faster R-CNN using TorchVision (reference implementation)
-2. Faster R-CNN with Custom Neck, isolating the effect of neck design
+1. Baseline Faster R-CNN using TorchVision  [traffic-sign-detection-faster-rcnn]https://github.com/Ureed-Hussain/traffic-sign-detection-faster-rcnn/tree/main
+2. Faster R-CNN with Custom Neck, isolating the effect of neck design [traffic-sign-detection-faster-rcnn-custom-neck](https://github.com/Ureed-Hussain/Traffic-sign-detection-faster-rcnn-custom-neck)
 
 The earlier repositories serve as correctness and performance references, while this project prioritizes architectural transparency, learning, and implementation-level understanding.
 
