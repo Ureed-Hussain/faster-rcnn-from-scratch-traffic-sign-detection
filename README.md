@@ -95,7 +95,7 @@ train_aug = A.Compose([
 These augmentations help improve model robustness by introducing small rotations and brightness/contrast variations.
 
 <p align="center">
-<img width="950" height="290" alt="image-1" src="https://github.com/user-attachments/assets/982e42bc-1f4d-426a-9130-194b3301dbd6" />
+    <img width="950" height="290" alt="image-1" src="https://github.com/user-attachments/assets/982e42bc-1f4d-426a-9130-194b3301dbd6" />
 </p>
 
 
@@ -109,3 +109,15 @@ Loaded 102 images with bounding boxes. (transforms=no)
 ~~~
 
 ## Model Description
+
+### Overall Architecture
+
+This implementation follows the canonical Faster R-CNN design:
+
+1. Backbone: Convolutional feature extractor
+2. Neck: Multi-scale feature aggregation
+3. Region Proposal Network (RPN): Generates candidate object regions
+4. RoI Feature Extraction: Aligns proposal features
+5. Detection Head: Classification and bounding box regression
+
+All components are implemented explicitly and wired together manually, exposing intermediate tensors, losses, and training dynamics.
