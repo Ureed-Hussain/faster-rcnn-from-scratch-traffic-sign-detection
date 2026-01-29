@@ -343,5 +343,42 @@ class CustomROIHeads(nn.Module):
 
 print(" Section 4: Custom ROI Heads defined")
 ~~~
+## Training Setup and Model Configuration
+
+The from-scratch Faster R-CNN model is constructed and trained using a fully custom training pipeline with explicit control over all architectural and optimization components. Training is executed on GPU when available, with automatic fallback to CPU to ensure portability.
+
+The model is instantiated with a ResNet50 backbone initialized with ImageNet-pretrained weights, while all other components—including the Feature Pyramid Network (FPN), Region Proposal Network (RPN), and RoI heads—are trained from scratch. The detector is configured to predict 44 classes, corresponding to the 43 traffic sign categories in GTSDB plus a background class. The RoI head uses a 1024-dimensional feature representation to balance expressive capacity and training stability.
+
+Mixed Precision Training is enabled using automatic mixed precision (AMP) with gradient scaling, reducing memory usage and improving training throughput while maintaining numerical stability.
+
+Overall, this training setup ensures that model behavior, convergence dynamics, and loss contributions from each Faster R-CNN component can be examined in detail, aligning with the project’s goal of architectural transparency and full pipeline understanding.
+
+
+<p align="center">
+    <img width="800" height="400" alt="Custom_R-cnn_curve" src="https://github.com/user-attachments/assets/039aa22f-052d-45ed-a7c5-7e9a96947710" />
+</p>
+
+## Testing and Evaluation
+
+Model evaluation is performed using a fully custom testing pipeline designed to go beyond default TorchVision inference and provide fine-grained control over detection behavior. Testing is conducted on the validation split using carefully tuned confidence thresholds and multiple non-maximum suppression (NMS) stages to balance recall and precision in a dense, multi-class traffic sign environment.
+
+During inference, predictions are filtered using class-agnostic NMS and score-based pruning, followed by IoU-based matching between predicted boxes and ground-truth annotations. True positives, false positives, and false negatives are computed explicitly at an IoU threshold of 0.5, enabling precise calculation of Precision, Recall, F1-score, and mAP (11-point interpolation). This explicit matching strategy ensures metric transparency and avoids reliance on black-box evaluation utilities.
+
+In addition to quantitative metrics, the evaluation pipeline includes visual inspection with ground-truth-aligned labeling, where matched predictions are shown in green and false positives in red. This qualitative analysis helps validate spatial localization quality, error modes, and class confusion patterns—crucial for understanding model behavior in real-world traffic scenes
+
+| Metric | Value |
+|------|------|
+| Precision | 86.79% |
+| Recall | 86.25% |
+| mAP | 74.15% |
+
+### Qualitative Result
+
+The following visualization shows predicted bounding boxes closely matching the ground truth, demonstrating strong localization and classification performance.
+
+<p align="center">
+    <img width="800" height="1000" alt="Custom_r-cnn_results" src="https://github.com/user-attachments/assets/cbf6b2fa-4114-4d34-bdf0-1b1e4fc64f99" />
+</p>
+
 
 
